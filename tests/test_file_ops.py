@@ -17,26 +17,26 @@ async def test_proxmox_file_put_missing_local():
 @pytest.mark.asyncio
 async def test_proxmox_file_put_success():
     runner = MagicMock()
-    # Mock runner.run to be an AsyncMock that returns a CommandResult
     runner.run = AsyncMock(return_value=CommandResult(
-        ok=True, code=0, stdout="", stderr="", duration_ms=10, vmid="100", cmd="qm guest file write ..."
+        ok=True, code=0, stdout="", stderr="", duration_ms=10, vmid="100", cmd="qm guest exec ..."
     ))
     
     ops = ProxmoxFileOps(runner=runner)
     
-    # We need a real file to exist for the check
-    with patch("pathlib.Path.exists", return_value=True):
+    with patch("pathlib.Path.exists", return_value=True), \
+         patch("pathlib.Path.open", MagicMock(return_value=MagicMock(__enter__=MagicMock(return_value=MagicMock(read=MagicMock(return_value=b"data")))))):
         result = await ops.put("100", "local.txt", "/tmp/remote.txt")
         assert result.ok is True
         runner.run.assert_called_once()
         call_args = runner.run.call_args[1]
-        assert "qm guest file write 100 /tmp/remote.txt local.txt" in call_args["cmd"]
+        assert "qm guest exec 100 -- python3 -c" in call_args["cmd"]
+        assert "import base64" in call_args["cmd"]
 
 @pytest.mark.asyncio
 async def test_proxmox_file_get_success():
     runner = MagicMock()
     runner.run = AsyncMock(return_value=CommandResult(
-        ok=True, code=0, stdout="file content", stderr="", duration_ms=10, vmid="100", cmd="qm guest file read ..."
+        ok=True, code=0, stdout="file content", stderr="", duration_ms=10, vmid="100", cmd="qm guest exec ..."
     ))
     
     ops = ProxmoxFileOps(runner=runner)
@@ -46,4 +46,4 @@ async def test_proxmox_file_get_success():
     assert result.stdout == "file content"
     runner.run.assert_called_once()
     call_args = runner.run.call_args[1]
-    assert "qm guest file read 100 /tmp/remote.txt" in call_args["cmd"]
+    assert "qm guest exec 100 -- cat /tmp/remote.txt" in call_args["cmd"]

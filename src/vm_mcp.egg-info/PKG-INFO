@@ -1,3 +1,12 @@
+Metadata-Version: 2.4
+Name: vm-mcp
+Version: 0.1.0
+Summary: Proxmox-oriented MCP server and CLI for VM lifecycle, orchestration, and host/guest operations
+License: MIT
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: fastmcp
+
 # vm-mcp
 
 Production-grade command orchestration framework for virtualized infrastructure, featuring a native Model Context Protocol (MCP) interface for AI-driven infrastructure management.
@@ -24,22 +33,6 @@ git clone https://github.com/SWORDIntel/vm-mcp.git
 cd vm-mcp
 python -m pip install -e .
 ```
-
-## Native Codex plugin package
-
-This repository now ships as a native Codex plugin bundle with:
-
-- `.codex-plugin/plugin.json` (plugin manifest)
-- `.mcp.json` (native MCP server registration)
-- `plugin/scripts/start-vm-mcp.sh` (server bootstrap resolver)
-- `plugin/skills/vm-mcp/SKILL.md` (operational skill for VM workflows)
-
-The plugin MCP entry calls `plugin/scripts/start-vm-mcp.sh`, which resolves launch order:
-
-1. `VM_MCP_SERVER_CMD` (if set)
-2. `vm-mcp-server` from `PATH`
-3. repo-local `.venv/bin/vm-mcp-server`
-4. `python3 -m vm_mcp.mcp_server` with `src/` on `PYTHONPATH`
 
 ## MCP install target (Codex / Gemini style)
 

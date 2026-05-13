@@ -1,0 +1,41 @@
+{
+  "name": "vm-mcp",
+  "version": "0.1.0",
+  "description": "Native MCP control plane and skill package for VM orchestration on Proxmox/Xen.",
+  "author": {
+    "name": "SWORDIntel",
+    "url": "https://github.com/SWORDIntel"
+  },
+  "homepage": "https://github.com/SWORDIntel/vm-mcp#readme",
+  "repository": "https://github.com/SWORDIntel/vm-mcp",
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "codex",
+    "skills",
+    "proxmox",
+    "xen",
+    "virtualization",
+    "orchestration"
+  ],
+  "skills": "./plugin/skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "vm-mcp",
+    "shortDescription": "Run policy-guarded VM operations through MCP tools.",
+    "longDescription": "vm-mcp exposes production-focused VM lifecycle, guest execution, file operations, orchestration, backup, and observability tools through a native MCP server plus an operational skill for Codex.",
+    "developerName": "SWORDIntel",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/SWORDIntel/vm-mcp",
+    "defaultPrompt": [
+      "Run vm_state status for VM 101 and summarize its current health.",
+      "Create a safe rollout plan using vm_snapshot, vm_config, and vm_state.",
+      "Fan out a read-only diagnostics command to a list of VM IDs."
+    ],
+    "brandColor": "#0F766E"
+  }
+}

@@ -1,0 +1,17 @@
+[Unit]
+Description=vm-mcp MCP server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Environment=VM_MCP_AUDIT_LOG=/var/log/vm-mcp-audit.log
+Environment=VM_MCP_ALLOW_BREAK_GLASS=1
+ExecStart=vm-mcp-server
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

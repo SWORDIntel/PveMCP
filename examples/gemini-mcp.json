@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "vm-mcp": {
+      "command": "vm-mcp-server",
+      "transport": "stdio",
+      "env": {
+        "VM_MCP_AUDIT_LOG": "/var/log/vm-mcp-audit.log",
+        "VM_MCP_ALLOW_BREAK_GLASS": "1"
+      }
+    }
+  }
+}

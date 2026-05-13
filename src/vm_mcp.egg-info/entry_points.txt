@@ -1,0 +1,3 @@
+[console_scripts]
+vm-mcp-server = vm_mcp.mcp_server:main
+vmctl = vm_mcp.cli:main
