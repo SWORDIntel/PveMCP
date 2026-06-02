@@ -1,7 +1,7 @@
 import asyncio
 
-from vm_mcp.proxmox import ProxmoxLifecycle, ProxmoxSnapshot
-from vm_mcp.runner import CommandRunner
+from proxmcp.proxmox import ProxmoxLifecycle, ProxmoxSnapshot
+from proxmcp.runner import CommandRunner
 
 
 def test_proxmox_state_cmds() -> None:

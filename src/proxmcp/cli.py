@@ -18,6 +18,13 @@ from .proxmox import (
 from .xen import XenLifecycle
 from .models import CommandResult
 from .metrics import Timer
+from .vm_memory import (
+    annotate_vm,
+    list_all_vm_memories,
+    load_vm_memory,
+    memory_context_summary,
+)
+
 
 
 def _guest_exec_command(
@@ -273,6 +280,75 @@ def main() -> int:
     gexec_parser.add_argument("--cwd")
     gexec_parser.add_argument("--env", nargs="+", help="K=V pairs")
     gexec_parser.add_argument("--timeout", type=int)
+
+    # --- New commands ---
+    list_parser = sub.add_parser("list", help="List all VMs on the Proxmox host")
+
+    ps_parser = sub.add_parser("ps", help="List processes in a VM guest")
+    ps_parser.add_argument("--vmid", required=True)
+    ps_parser.add_argument("--filter", dest="filter_name", help="Filter by process name substring")
+
+    top_parser = sub.add_parser("top", help="Show top resource consumers in a VM guest")
+    top_parser.add_argument("--vmid", required=True)
+    top_parser.add_argument("--lines", type=int, default=20)
+
+    disk_parser = sub.add_parser("disk", help="Show disk usage in a VM guest")
+    disk_parser.add_argument("--vmid", required=True)
+
+    network_parser = sub.add_parser("network", help="Show network config in a VM guest")
+    network_parser.add_argument("--vmid", required=True)
+
+    tail_parser = sub.add_parser("tail", help="Tail a log file in a VM guest")
+    tail_parser.add_argument("--vmid", required=True)
+    tail_parser.add_argument("--path", required=True)
+    tail_parser.add_argument("--lines", type=int, default=50)
+
+    sysinfo_parser = sub.add_parser("sysinfo", help="Get system info from a VM guest")
+    sysinfo_parser.add_argument("--vmid", required=True)
+
+    env_parser = sub.add_parser("env", help="Dump environment variables in a VM guest")
+    env_parser.add_argument("--vmid", required=True)
+
+    ripgrep_parser = sub.add_parser("ripgrep", help="Search file contents with ripgrep in a VM guest")
+    ripgrep_parser.add_argument("--vmid", required=True)
+    ripgrep_parser.add_argument("--pattern", required=True)
+    ripgrep_parser.add_argument("--path", default="/")
+    ripgrep_parser.add_argument("--glob", dest="file_glob")
+    ripgrep_parser.add_argument("-i", "--ignore-case", action="store_true")
+    ripgrep_parser.add_argument("--max", type=int, default=50, dest="max_results")
+
+    find_parser = sub.add_parser("find", help="Find files in a VM guest")
+    find_parser.add_argument("--vmid", required=True)
+    find_parser.add_argument("--path", default="/")
+    find_parser.add_argument("--name")
+    find_parser.add_argument("--type", dest="file_type", choices=["f", "d", "l"])
+    find_parser.add_argument("--mtime", type=int, dest="mtime_days")
+    find_parser.add_argument("--size-gt", dest="size_gt")
+    find_parser.add_argument("--maxdepth", type=int, dest="max_depth")
+
+    port_parser = sub.add_parser("port", help="Check if a port is listening in a VM guest")
+    port_parser.add_argument("--vmid", required=True)
+    port_parser.add_argument("--port", type=int, required=True)
+
+    install_parser = sub.add_parser("install", help="Install a package in a VM guest")
+    install_parser.add_argument("--vmid", required=True)
+    install_parser.add_argument("--package", required=True)
+    install_parser.add_argument("--manager", default="apt", choices=["apt", "yum", "dnf", "apk"])
+
+    mem_parser = sub.add_parser("memory", help="Manage VM memory/context store")
+    mem_sub = mem_parser.add_subparsers(dest="action", required=True)
+    mem_get_parser = mem_sub.add_parser("get")
+    mem_get_parser.add_argument("--vmid", required=True)
+    mem_set_parser = mem_sub.add_parser("set")
+    mem_set_parser.add_argument("--vmid", required=True)
+    mem_set_parser.add_argument("--notes")
+    mem_set_parser.add_argument("--tags", nargs="+")
+    mem_set_parser.add_argument("--services", nargs="+")
+    mem_set_parser.add_argument("--containers", nargs="+")
+    mem_set_parser.add_argument("--paths", nargs="+", help="label=path pairs")
+    mem_sub.add_parser("list")
+    mem_clear_parser = mem_sub.add_parser("clear")
+    mem_clear_parser.add_argument("--vmid", required=True)
 
     args = parser.parse_args()
     danger_mode = "maintenance"
@@ -643,6 +719,234 @@ def main() -> int:
 
         print(json.dumps(result_dict, sort_keys=True))
         return 0 if result_dict.get("ok") else 1
+
+    if args.command == "list":
+        cmd = "qm list"
+        result = asyncio.run(
+            service.exec(vmid="host", cmd=cmd, actor=actor, danger_mode=danger_mode,
+                         audit_tag=args.audit_tag, action="vm_list",
+                         skip_policy=True, skip_audit=True, skip_metrics=True)
+        )
+        stdout = (result.stdout or "").strip()
+        memories = {m["vmid"]: m for m in list_all_vm_memories()}
+        print(stdout)
+        for m in list_all_vm_memories():
+            vmid = m["vmid"]
+            if m.get("tags") or m.get("notes_preview"):
+                print(f"  [{vmid}] tags={m['tags']} | {m['notes_preview']}")
+        return 0 if result.ok else 1
+
+    if args.command == "ps":
+        ps_cmd = "ps aux --no-header"
+        result_dict = asyncio.run(_run_with_policy(
+            vmid=args.vmid, actor=actor, action="vm_ps",
+            command=_guest_exec_command(args.vmid, ps_cmd),
+            execute=lambda: gexec.exec(vmid=args.vmid, cmd=ps_cmd),
+            danger_mode=danger_mode, audit_tag=args.audit_tag, command_context="guest",
+        ))
+        from .mcp_server import _guest_stdout as _gs
+        stdout = _gs(str(result_dict.get("stdout", "")))
+        if args.filter_name:
+            lines = [l for l in stdout.splitlines() if args.filter_name.lower() in l.lower()]
+        else:
+            lines = stdout.splitlines()
+        print("\n".join(lines))
+        return 0 if result_dict.get("ok") else 1
+
+    if args.command == "top":
+        top_cmd = f"ps aux --no-header --sort=-%cpu | head -{args.lines}"
+        result_dict = asyncio.run(_run_with_policy(
+            vmid=args.vmid, actor=actor, action="vm_top",
+            command=_guest_exec_command(args.vmid, top_cmd),
+            execute=lambda: gexec.exec(vmid=args.vmid, cmd=top_cmd),
+            danger_mode=danger_mode, audit_tag=args.audit_tag, command_context="guest",
+        ))
+        from .mcp_server import _guest_stdout as _gs
+        print(_gs(str(result_dict.get("stdout", ""))))
+        return 0 if result_dict.get("ok") else 1
+
+    if args.command == "disk":
+        df_cmd = "df -h --output=source,fstype,size,used,avail,pcent,target"
+        result_dict = asyncio.run(_run_with_policy(
+            vmid=args.vmid, actor=actor, action="vm_disk",
+            command=_guest_exec_command(args.vmid, df_cmd),
+            execute=lambda: gexec.exec(vmid=args.vmid, cmd=df_cmd),
+            danger_mode=danger_mode, audit_tag=args.audit_tag, command_context="guest",
+        ))
+        from .mcp_server import _guest_stdout as _gs
+        print(_gs(str(result_dict.get("stdout", ""))))
+        return 0 if result_dict.get("ok") else 1
+
+    if args.command == "network":
+        cmds = {"IPs": "ip -brief addr", "Routes": "ip route", "Listening": "ss -tlnp"}
+        for label, ncmd in cmds.items():
+            r = asyncio.run(_run_with_policy(
+                vmid=args.vmid, actor=actor, action=f"vm_network:{label}",
+                command=_guest_exec_command(args.vmid, ncmd),
+                execute=lambda cmd=ncmd: gexec.exec(vmid=args.vmid, cmd=cmd),
+                danger_mode=danger_mode, audit_tag=args.audit_tag, command_context="guest",
+            ))
+            from .mcp_server import _guest_stdout as _gs
+            print(f"--- {label} ---")
+            print(_gs(str(r.get("stdout", ""))))
+        return 0
+
+    if args.command == "tail":
+        tail_cmd = f"tail -n {args.lines} {shlex.quote(args.path)}"
+        result_dict = asyncio.run(_run_with_policy(
+            vmid=args.vmid, actor=actor, action="vm_tail",
+            command=_guest_exec_command(args.vmid, tail_cmd),
+            execute=lambda: gexec.exec(vmid=args.vmid, cmd=tail_cmd),
+            danger_mode=danger_mode, audit_tag=args.audit_tag, command_context="guest",
+        ))
+        from .mcp_server import _guest_stdout as _gs
+        print(_gs(str(result_dict.get("stdout", ""))))
+        return 0 if result_dict.get("ok") else 1
+
+    if args.command == "sysinfo":
+        cmds = {
+            "OS": "cat /etc/os-release 2>/dev/null || cat /etc/issue",
+            "Kernel": "uname -r",
+            "Uptime": "uptime -p 2>/dev/null || uptime",
+            "CPU cores": "nproc",
+            "Hostname": "hostname -f 2>/dev/null || hostname",
+            "Network": "ip -brief addr",
+            "Memory": "free -h | head -2",
+            "Disk": "df -h --output=target,size,avail,pcent | head -10",
+        }
+        from .mcp_server import _guest_stdout as _gs
+        for label, scmd in cmds.items():
+            r = asyncio.run(_run_with_policy(
+                vmid=args.vmid, actor=actor, action=f"vm_sysinfo:{label}",
+                command=_guest_exec_command(args.vmid, scmd),
+                execute=lambda cmd=scmd: gexec.exec(vmid=args.vmid, cmd=cmd),
+                danger_mode=danger_mode, audit_tag=args.audit_tag, command_context="guest",
+            ))
+            out = _gs(str(r.get("stdout", ""))).strip()
+            print(f"=== {label} ===")
+            print(out or "(no output)")
+        return 0
+
+    if args.command == "env":
+        env_cmd = "env"
+        result_dict = asyncio.run(_run_with_policy(
+            vmid=args.vmid, actor=actor, action="vm_env",
+            command=_guest_exec_command(args.vmid, env_cmd),
+            execute=lambda: gexec.exec(vmid=args.vmid, cmd=env_cmd),
+            danger_mode=danger_mode, audit_tag=args.audit_tag, command_context="guest",
+        ))
+        from .mcp_server import _guest_stdout as _gs
+        print(_gs(str(result_dict.get("stdout", ""))))
+        return 0 if result_dict.get("ok") else 1
+
+    if args.command == "ripgrep":
+        rg_parts = ["rg", "--line-number", "--no-heading", f"--max-count={args.max_results}"]
+        if args.ignore_case:
+            rg_parts.append("-i")
+        if args.file_glob:
+            rg_parts.extend(["--glob", args.file_glob])
+        rg_parts.extend([args.pattern, args.path])
+        rg_cmd = " ".join(shlex.quote(p) for p in rg_parts)
+        result_dict = asyncio.run(_run_with_policy(
+            vmid=args.vmid, actor=actor, action="vm_ripgrep",
+            command=_guest_exec_command(args.vmid, rg_cmd),
+            execute=lambda: gexec.exec(vmid=args.vmid, cmd=rg_cmd),
+            danger_mode=danger_mode, audit_tag=args.audit_tag, command_context="guest",
+        ))
+        from .mcp_server import _guest_stdout as _gs
+        print(_gs(str(result_dict.get("stdout", ""))))
+        return 0 if result_dict.get("ok") else 1
+
+    if args.command == "find":
+        f_parts = ["find", args.path]
+        if args.max_depth is not None:
+            f_parts.extend(["-maxdepth", str(args.max_depth)])
+        if args.file_type:
+            f_parts.extend(["-type", args.file_type])
+        if args.name:
+            f_parts.extend(["-name", args.name])
+        if args.mtime_days is not None:
+            f_parts.extend(["-mtime", f"-{args.mtime_days}"])
+        if args.size_gt:
+            f_parts.extend(["-size", f"+{args.size_gt}"])
+        find_cmd = " ".join(shlex.quote(p) for p in f_parts)
+        result_dict = asyncio.run(_run_with_policy(
+            vmid=args.vmid, actor=actor, action="vm_find",
+            command=_guest_exec_command(args.vmid, find_cmd),
+            execute=lambda: gexec.exec(vmid=args.vmid, cmd=find_cmd),
+            danger_mode=danger_mode, audit_tag=args.audit_tag, command_context="guest",
+        ))
+        from .mcp_server import _guest_stdout as _gs
+        print(_gs(str(result_dict.get("stdout", ""))))
+        return 0 if result_dict.get("ok") else 1
+
+    if args.command == "port":
+        ss_cmd = f"ss -tlnp 'sport = :{args.port}'"
+        result_dict = asyncio.run(_run_with_policy(
+            vmid=args.vmid, actor=actor, action="vm_port_check",
+            command=_guest_exec_command(args.vmid, ss_cmd),
+            execute=lambda: gexec.exec(vmid=args.vmid, cmd=ss_cmd),
+            danger_mode=danger_mode, audit_tag=args.audit_tag, command_context="guest",
+        ))
+        from .mcp_server import _guest_stdout as _gs
+        stdout = _gs(str(result_dict.get("stdout", ""))).strip()
+        lines = [l for l in stdout.splitlines() if l.strip() and "State" not in l]
+        print(f"Port {args.port}: {'LISTENING' if lines else 'NOT listening'}")
+        if lines:
+            print("\n".join(lines))
+        return 0 if result_dict.get("ok") else 1
+
+    if args.command == "install":
+        if args.manager == "apt":
+            pkg_cmd = f"DEBIAN_FRONTEND=noninteractive apt-get install -y {shlex.quote(args.package)}"
+        elif args.manager == "yum":
+            pkg_cmd = f"yum install -y {shlex.quote(args.package)}"
+        elif args.manager == "dnf":
+            pkg_cmd = f"dnf install -y {shlex.quote(args.package)}"
+        else:  # apk
+            pkg_cmd = f"apk add --no-cache {shlex.quote(args.package)}"
+        result_dict = asyncio.run(_run_with_policy(
+            vmid=args.vmid, actor=actor, action="vm_install_package",
+            command=_guest_exec_command(args.vmid, pkg_cmd),
+            execute=lambda: gexec.exec(vmid=args.vmid, cmd=pkg_cmd),
+            danger_mode=danger_mode, audit_tag=args.audit_tag, command_context="guest",
+        ))
+        print(json.dumps(result_dict, sort_keys=True))
+        return 0 if result_dict.get("ok") else 1
+
+    if args.command == "memory":
+        if args.action == "get":
+            print(json.dumps(memory_context_summary(args.vmid), indent=2))
+        elif args.action == "list":
+            records = list_all_vm_memories()
+            print(json.dumps(records, indent=2))
+        elif args.action == "set":
+            paths_dict = None
+            if args.paths:
+                paths_dict = {}
+                for item in args.paths:
+                    if "=" in item:
+                        k, v = item.split("=", 1)
+                        paths_dict[k] = v
+            annotate_vm(
+                args.vmid,
+                notes=args.notes,
+                paths=paths_dict,
+                services=args.services,
+                containers=args.containers,
+                tags=args.tags,
+            )
+            print(json.dumps(memory_context_summary(args.vmid), indent=2))
+        elif args.action == "clear":
+            import os as _os
+            from .vm_memory import _MEMORY_DIR
+            path = _MEMORY_DIR / f"{args.vmid}.json"
+            if path.exists():
+                _os.remove(path)
+                print(f"Memory cleared for VM {args.vmid}")
+            else:
+                print(f"No memory found for VM {args.vmid}")
+        return 0
 
     return 1
 

@@ -1,8 +1,8 @@
 import pytest
 from unittest.mock import MagicMock, AsyncMock
-from vm_mcp.slo import SLOChecker, SLOThresholds
-from vm_mcp.metrics import MetricsStore
-from vm_mcp.models import CommandResult
+from proxmcp.slo import SLOChecker, SLOThresholds
+from proxmcp.metrics import MetricsStore
+from proxmcp.models import CommandResult
 
 def test_slo_metrics_ok():
     metrics = MetricsStore()

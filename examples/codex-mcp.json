@@ -1,11 +1,11 @@
 {
   "mcpServers": {
-    "vm-mcp": {
-      "command": "vm-mcp-server",
+    "proxmcp": {
+      "command": "proxmcp-server",
       "args": [],
       "env": {
-        "VM_MCP_AUDIT_LOG": "/var/log/vm-mcp-audit.log",
-        "VM_MCP_ALLOW_BREAK_GLASS": "1"
+        "PROXMCP_AUDIT_LOG": "/var/log/proxmcp-audit.log",
+        "PROXMCP_ALLOW_BREAK_GLASS": "1"
       }
     }
   }

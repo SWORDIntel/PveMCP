@@ -2,7 +2,7 @@ import asyncio
 import json
 from pathlib import Path
 
-from vm_mcp.service import VMService
+from proxmcp.service import VMService
 
 
 def test_service_redacts_and_audits(tmp_path: Path) -> None:

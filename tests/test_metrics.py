@@ -1,7 +1,7 @@
 import asyncio
 
-from vm_mcp.metrics import MetricsStore
-from vm_mcp.service import VMService
+from proxmcp.metrics import MetricsStore
+from proxmcp.service import VMService
 
 
 def test_metrics_store_snapshot() -> None:

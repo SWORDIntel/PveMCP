@@ -34,6 +34,22 @@ cd vm-mcp
 python -m pip install -e .
 ```
 
+## Native Codex plugin package
+
+This repository now ships as a native Codex plugin bundle with:
+
+- `.codex-plugin/plugin.json` (plugin manifest)
+- `.mcp.json` (native MCP server registration)
+- `plugin/scripts/start-vm-mcp.sh` (server bootstrap resolver)
+- `plugin/skills/vm-mcp/SKILL.md` (operational skill for VM workflows)
+
+The plugin MCP entry calls `plugin/scripts/start-vm-mcp.sh`, which resolves launch order:
+
+1. `VM_MCP_SERVER_CMD` (if set)
+2. `vm-mcp-server` from `PATH`
+3. repo-local `.venv/bin/vm-mcp-server`
+4. `python3 -m vm_mcp.mcp_server` with `src/` on `PYTHONPATH`
+
 ## MCP install target (Codex / Gemini style)
 
 This package exposes one stdio MCP entrypoint:

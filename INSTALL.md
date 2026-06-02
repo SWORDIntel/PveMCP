@@ -1,37 +1,37 @@
-# vm-mcp installation and MCP wiring
+# proxmcp installation and MCP wiring
 
 ## Native plugin layout (Codex)
 
-`vm-mcp` now includes native plugin metadata and skill packaging:
+`proxmcp` now includes native plugin metadata and skill packaging:
 
 - `.codex-plugin/plugin.json`
 - `.mcp.json`
-- `plugin/scripts/start-vm-mcp.sh`
-- `plugin/skills/vm-mcp/SKILL.md`
+- `plugin/scripts/start-proxmcp.sh`
+- `plugin/skills/proxmcp/SKILL.md`
 
-This means Codex can consume vm-mcp as a first-class MCP+skill plugin without custom per-tool scaffolding.
+This means Codex can consume proxmcp as a first-class MCP+skill plugin without custom per-tool scaffolding.
 
 ## Install from git (host-side)
 
 ```bash
-python -m pip install git+https://github.com/SWORDIntel/vm-mcp.git
+python -m pip install git+https://github.com/SWORDIntel/proxmcp.git
 ```
 
 ## Editable install for local development
 
 ```bash
-git clone https://github.com/SWORDIntel/vm-mcp.git
-cd vm-mcp
+git clone https://github.com/SWORDIntel/proxmcp.git
+cd proxmcp
 python -m pip install -e .
 ```
 
 ## MCP entrypoint
 
 ```bash
-vm-mcp-server
+proxmcp-server
 ```
 
-This launches the MCP server using stdio transport via `FastMCP("vm-mcp")`.
+This launches the MCP server using stdio transport via `FastMCP("ProxMCP")`.
 
 ## Client wiring (Codex / Gemini style)
 
@@ -43,11 +43,11 @@ This launches the MCP server using stdio transport via `FastMCP("vm-mcp")`.
 ```json
 {
   "mcpServers": {
-    "vm-mcp": {
-      "command": "vm-mcp-server",
+    "proxmcp": {
+      "command": "proxmcp-server",
       "env": {
-        "VM_MCP_AUDIT_LOG": "/var/log/vm-mcp-audit.log",
-        "VM_MCP_ALLOW_BREAK_GLASS": "1"
+        "PROXMCP_AUDIT_LOG": "/var/log/proxmcp-audit.log",
+        "PROXMCP_ALLOW_BREAK_GLASS": "1"
       }
     }
   }
@@ -57,7 +57,7 @@ This launches the MCP server using stdio transport via `FastMCP("vm-mcp")`.
 ## Host trust behavior
 
 - Host commands are allowed to run without strict checks automatically when:
-  - `VM_MCP_ALLOW_BREAK_GLASS=1`
+  - `PROXMCP_ALLOW_BREAK_GLASS=1`
   - or `/etc/pve` exists (i.e., when running on a Proxmox host).
 
 For everything else, guest actions continue to be policy-constrained.
@@ -65,14 +65,14 @@ For everything else, guest actions continue to be policy-constrained.
 ## One-shot install helper
 
 ```bash
-chmod +x scripts/install-vm-mcp.sh
-scripts/install-vm-mcp.sh --client both
+chmod +x scripts/install-proxmcp.sh
+scripts/install-proxmcp.sh --client both
 ```
 
 Install client configs, register Codex natively, and optionally start the service in one pass:
 
 ```bash
-scripts/install-vm-mcp.sh --client both --install-service
+scripts/install-proxmcp.sh --client both --install-service
 ```
 
 The installer now also updates:
@@ -81,37 +81,37 @@ The installer now also updates:
 ~/.codex/settings.json
 ```
 
-by merging `mcpServers.vm-mcp` under the `mcpServers` section when `--client codex` or `--client both` is used.
+by merging `mcpServers.proxmcp` under the `mcpServers` section when `--client codex` or `--client both` is used.
 
 ### Uninstall
 
 Remove local file artifacts and native Codex registration from the unified installer:
 
 ```bash
-scripts/install-vm-mcp.sh --uninstall
+scripts/install-proxmcp.sh --uninstall
 ```
 
 To also remove the systemd unit:
 
 ```bash
-scripts/install-vm-mcp.sh --uninstall --remove-service
+scripts/install-proxmcp.sh --uninstall --remove-service
 ```
 
 Default client configs are written under:
 
 ```text
-~/.codex/mcp/vm-mcp-*.json
+~/.codex/mcp/proxmcp-*.json
 ```
 
 ## Optional: run as a systemd service
 
-Use this unit file when you want `vm-mcp-server` to start automatically on the host.
+Use this unit file when you want `proxmcp-server` to start automatically on the host.
 
 ```bash
-sudo cp examples/vm-mcp.service /etc/systemd/system/vm-mcp.service
+sudo cp examples/proxmcp.service /etc/systemd/system/proxmcp.service
 sudo systemctl daemon-reload
-sudo systemctl enable --now vm-mcp.service
-sudo systemctl status vm-mcp.service
+sudo systemctl enable --now proxmcp.service
+sudo systemctl status proxmcp.service
 ```
 
-If you need to tune env values, edit `/etc/systemd/system/vm-mcp.service` before reloading.
+If you need to tune env values, edit `/etc/systemd/system/proxmcp.service` before reloading.

@@ -1,8 +1,8 @@
 import pytest
 import asyncio
 from unittest.mock import MagicMock, patch, AsyncMock
-from vm_mcp.proxmox import ProxmoxFileOps
-from vm_mcp.models import CommandResult
+from proxmcp.proxmox import ProxmoxFileOps
+from proxmcp.models import CommandResult
 
 @pytest.mark.asyncio
 async def test_proxmox_file_put_missing_local():

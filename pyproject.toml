@@ -1,5 +1,5 @@
 [project]
-name = "vm-mcp"
+name = "proxmcp"
 version = "0.1.0"
 requires-python = ">=3.10"
 description = "Proxmox-oriented MCP server and CLI for VM lifecycle, orchestration, and host/guest operations"
@@ -11,5 +11,5 @@ license = { text = "MIT" }
 pythonpath = ["src"]
 
 [project.scripts]
-vmctl = "vm_mcp.cli:main"
-vm-mcp-server = "vm_mcp.mcp_server:main"
+vmctl = "proxmcp.cli:main"
+proxmcp-server = "proxmcp.mcp_server:main"

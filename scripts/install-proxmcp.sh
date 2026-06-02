@@ -5,10 +5,10 @@ set -euo pipefail
 usage() {
 cat <<'EOF'
 Usage:
-  install-vm-mcp.sh [--repo PATH] [--client codex|gemini|both] [--no-pip] [--config-dir DIR]
-  install-vm-mcp.sh [--install-service]
-  install-vm-mcp.sh --uninstall [--client codex|gemini|both] [--config-dir DIR]
-  install-vm-mcp.sh --uninstall [--client codex|gemini|both] [--config-dir DIR] --remove-service
+  install-proxmcp.sh [--repo PATH] [--client codex|gemini|both] [--no-pip] [--config-dir DIR]
+  install-proxmcp.sh [--install-service]
+  install-proxmcp.sh --uninstall [--client codex|gemini|both] [--config-dir DIR]
+  install-proxmcp.sh --uninstall [--client codex|gemini|both] [--config-dir DIR] --remove-service
 
 Defaults:
   --repo "$(pwd)"
@@ -32,13 +32,13 @@ resolve_service_execution() {
     return 0
   fi
 
-  if command -v vm-mcp-server >/dev/null 2>&1; then
-    SERVICE_EXEC_COMMAND="$(command -v vm-mcp-server)"
+  if command -v proxmcp-server >/dev/null 2>&1; then
+    SERVICE_EXEC_COMMAND="$(command -v proxmcp-server)"
     return 0
   fi
 
-  if [[ -x "${REPO_DIR}/.venv/bin/vm-mcp-server" ]]; then
-    SERVICE_EXEC_COMMAND="${REPO_DIR}/.venv/bin/vm-mcp-server"
+  if [[ -x "${REPO_DIR}/.venv/bin/proxmcp-server" ]]; then
+    SERVICE_EXEC_COMMAND="${REPO_DIR}/.venv/bin/proxmcp-server"
     return 0
   fi
 
@@ -46,12 +46,12 @@ resolve_service_execution() {
 }
 
 resolve_mcp_command() {
-  if command -v vm-mcp-server >/dev/null 2>&1; then
-    MCP_COMMAND="$(command -v vm-mcp-server)"
-  elif [[ -x "${REPO_DIR}/.venv/bin/vm-mcp-server" ]]; then
-    MCP_COMMAND="${REPO_DIR}/.venv/bin/vm-mcp-server"
+  if command -v proxmcp-server >/dev/null 2>&1; then
+    MCP_COMMAND="$(command -v proxmcp-server)"
+  elif [[ -x "${REPO_DIR}/.venv/bin/proxmcp-server" ]]; then
+    MCP_COMMAND="${REPO_DIR}/.venv/bin/proxmcp-server"
   else
-    MCP_COMMAND="vm-mcp-server"
+    MCP_COMMAND="proxmcp-server"
   fi
 }
 
@@ -73,8 +73,8 @@ server = {
     "command": command,
     "args": [],
     "env": {
-        "VM_MCP_AUDIT_LOG": audit_log,
-        "VM_MCP_ALLOW_BREAK_GLASS": "1",
+        "PROXMCP_AUDIT_LOG": audit_log,
+        "PROXMCP_ALLOW_BREAK_GLASS": "1",
     },
 }
 if transport:
@@ -82,7 +82,7 @@ if transport:
 
 target.parent.mkdir(parents=True, exist_ok=True)
 target.write_text(
-    json.dumps({"mcpServers": {"vm-mcp": server}}, indent=2) + "\n",
+    json.dumps({"mcpServers": {"proxmcp": server}}, indent=2) + "\n",
     encoding="utf-8",
 )
 PY
@@ -96,14 +96,14 @@ write_service_unit() {
 
   cat > "${target_path}" <<EOF
 [Unit]
-Description=vm-mcp MCP server
+Description=proxmcp MCP server
 After=network.target
 
 [Service]
 Type=simple
 User=root
-Environment=VM_MCP_AUDIT_LOG=${AUDIT_LOG}
-Environment=VM_MCP_ALLOW_BREAK_GLASS=1
+Environment=PROXMCP_AUDIT_LOG=${AUDIT_LOG}
+Environment=PROXMCP_ALLOW_BREAK_GLASS=1
 ${extra_env}
 ExecStart=${exec_command}
 ${working_dir:+WorkingDirectory=${working_dir}}
@@ -135,9 +135,9 @@ if not source_path.exists():
 
 source_cfg = json.loads(source_path.read_text(encoding="utf-8"))
 source_servers = source_cfg.get("mcpServers", {})
-source_server = source_servers.get("vm-mcp")
+source_server = source_servers.get("proxmcp")
 if not isinstance(source_server, dict):
-    raise ValueError("Invalid source config: expected mcpServers.vm-mcp object")
+    raise ValueError("Invalid source config: expected mcpServers.proxmcp object")
 
 if settings_path.exists():
     current_raw = settings_path.read_text(encoding="utf-8").strip()
@@ -155,7 +155,7 @@ if not isinstance(mcp_servers, dict):
     mcp_servers = {}
     current["mcpServers"] = mcp_servers
 
-existing_server = mcp_servers.get("vm-mcp", {})
+existing_server = mcp_servers.get("proxmcp", {})
 if not isinstance(existing_server, dict):
     existing_server = {}
 
@@ -170,7 +170,7 @@ for key, value in source_server.items():
     merged_server[key] = value
 merged_server["env"] = merged_env
 
-mcp_servers["vm-mcp"] = merged_server
+mcp_servers["proxmcp"] = merged_server
 
 settings_path.parent.mkdir(parents=True, exist_ok=True)
 settings_path.write_text(
@@ -209,7 +209,7 @@ if not isinstance(mcp_servers, dict):
     print(f"No mcpServers block in settings: {settings_path}")
     raise SystemExit(1)
 
-mcp_servers.pop("vm-mcp", None)
+mcp_servers.pop("proxmcp", None)
 data["mcpServers"] = mcp_servers
 
 settings_path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -232,14 +232,14 @@ remove_systemd_service() {
     SUDO="sudo "
   fi
 
-  if ${SUDO}systemctl list-unit-files vm-mcp.service >/dev/null 2>&1; then
-    ${SUDO}systemctl stop vm-mcp.service || true
-    ${SUDO}systemctl disable vm-mcp.service || true
-    ${SUDO}rm -f /etc/systemd/system/vm-mcp.service
+  if ${SUDO}systemctl list-unit-files proxmcp.service >/dev/null 2>&1; then
+    ${SUDO}systemctl stop proxmcp.service || true
+    ${SUDO}systemctl disable proxmcp.service || true
+    ${SUDO}rm -f /etc/systemd/system/proxmcp.service
     ${SUDO}systemctl daemon-reload
-    echo "Removed vm-mcp systemd unit."
+    echo "Removed proxmcp systemd unit."
   else
-    echo "No vm-mcp systemd unit found."
+    echo "No proxmcp systemd unit found."
   fi
 }
 
@@ -303,7 +303,7 @@ fi
 if [[ -z "${CONFIG_DIR}" ]]; then
   CONFIG_DIR="${HOME}/.codex"
 fi
-AUDIT_LOG="${CONFIG_DIR}/logs/vm-mcp-audit.log"
+AUDIT_LOG="${CONFIG_DIR}/logs/proxmcp-audit.log"
 
 if [[ "${CLIENT}" != "codex" && "${CLIENT}" != "gemini" && "${CLIENT}" != "both" ]]; then
   echo "Unknown --client value: ${CLIENT}"
@@ -324,26 +324,26 @@ fi
 
 if "${UNINSTALL}"; then
   if [[ "${CLIENT}" == "codex" || "${CLIENT}" == "both" ]]; then
-    if [[ -f "${CONFIG_DIR}/mcp/vm-mcp-codex.json" ]]; then
-      rm -f "${CONFIG_DIR}/mcp/vm-mcp-codex.json"
-      echo "Removed ${CONFIG_DIR}/mcp/vm-mcp-codex.json"
+    if [[ -f "${CONFIG_DIR}/mcp/proxmcp-codex.json" ]]; then
+      rm -f "${CONFIG_DIR}/mcp/proxmcp-codex.json"
+      echo "Removed ${CONFIG_DIR}/mcp/proxmcp-codex.json"
     else
-      echo "No Codex file at ${CONFIG_DIR}/mcp/vm-mcp-codex.json"
+      echo "No Codex file at ${CONFIG_DIR}/mcp/proxmcp-codex.json"
     fi
 
     if cleanup_codex_settings "${CONFIG_DIR}/settings.json"; then
-      echo "Removed vm-mcp from ${CONFIG_DIR}/settings.json"
+      echo "Removed proxmcp from ${CONFIG_DIR}/settings.json"
     else
       echo "No Codex settings update needed at ${CONFIG_DIR}/settings.json"
     fi
   fi
 
   if [[ "${CLIENT}" == "gemini" || "${CLIENT}" == "both" ]]; then
-    if [[ -f "${CONFIG_DIR}/mcp/vm-mcp-gemini.json" ]]; then
-      rm -f "${CONFIG_DIR}/mcp/vm-mcp-gemini.json"
-      echo "Removed ${CONFIG_DIR}/mcp/vm-mcp-gemini.json"
+    if [[ -f "${CONFIG_DIR}/mcp/proxmcp-gemini.json" ]]; then
+      rm -f "${CONFIG_DIR}/mcp/proxmcp-gemini.json"
+      echo "Removed ${CONFIG_DIR}/mcp/proxmcp-gemini.json"
     else
-      echo "No Gemini file at ${CONFIG_DIR}/mcp/vm-mcp-gemini.json"
+      echo "No Gemini file at ${CONFIG_DIR}/mcp/proxmcp-gemini.json"
     fi
   fi
 
@@ -351,7 +351,7 @@ if "${UNINSTALL}"; then
     remove_systemd_service
   fi
 
-  echo "vm-mcp uninstall complete."
+  echo "proxmcp uninstall complete."
   exit 0
 fi
 
@@ -365,7 +365,7 @@ if [[ ! -f "${REPO_DIR}/pyproject.toml" ]]; then
 fi
 
 if "${INSTALL_PIP}"; then
-  echo "Installing vm-mcp..."
+  echo "Installing proxmcp..."
   if ! "${PYTHON_BIN}" -m pip install -e "${REPO_DIR}"; then
     echo "System pip install failed; installing into ${REPO_DIR}/.venv instead."
     "${PYTHON_BIN}" -m venv "${REPO_DIR}/.venv"
@@ -380,9 +380,9 @@ mkdir -p "${CONFIG_DIR}/mcp"
 mkdir -p "$(dirname "${AUDIT_LOG}")"
 
 if [[ "${CLIENT}" == "codex" || "${CLIENT}" == "both" ]]; then
-  write_client_config "${CONFIG_DIR}/mcp/vm-mcp-codex.json" ""
-  echo "Wrote Codex config to ${CONFIG_DIR}/mcp/vm-mcp-codex.json"
-  if sync_codex_settings "${CONFIG_DIR}/settings.json" "${CONFIG_DIR}/mcp/vm-mcp-codex.json"; then
+  write_client_config "${CONFIG_DIR}/mcp/proxmcp-codex.json" ""
+  echo "Wrote Codex config to ${CONFIG_DIR}/mcp/proxmcp-codex.json"
+  if sync_codex_settings "${CONFIG_DIR}/settings.json" "${CONFIG_DIR}/mcp/proxmcp-codex.json"; then
     echo "Updated native Codex settings at ${CONFIG_DIR}/settings.json"
   else
     echo "Warning: failed to merge native Codex settings at ${CONFIG_DIR}/settings.json"
@@ -391,8 +391,8 @@ if [[ "${CLIENT}" == "codex" || "${CLIENT}" == "both" ]]; then
 fi
 
 if [[ "${CLIENT}" == "gemini" || "${CLIENT}" == "both" ]]; then
-  write_client_config "${CONFIG_DIR}/mcp/vm-mcp-gemini.json" "stdio"
-  echo "Wrote Gemini config to ${CONFIG_DIR}/mcp/vm-mcp-gemini.json"
+  write_client_config "${CONFIG_DIR}/mcp/proxmcp-gemini.json" ""
+  echo "Wrote Gemini config to ${CONFIG_DIR}/mcp/proxmcp-gemini.json"
 fi
 
 if [[ "${INSTALL_SERVICE}" == "true" ]]; then
@@ -402,8 +402,8 @@ if [[ "${INSTALL_SERVICE}" == "true" ]]; then
   fi
 
   if ! resolve_service_execution; then
-    echo "Cannot resolve a vm-mcp execution target for systemd."
-    echo "Install with pip (default) or run from an environment with vm-mcp-server on PATH."
+    echo "Cannot resolve a proxmcp execution target for systemd."
+    echo "Install with pip (default) or run from an environment with proxmcp-server on PATH."
     exit 1
   fi
 
@@ -417,16 +417,16 @@ if [[ "${INSTALL_SERVICE}" == "true" ]]; then
   write_service_unit "${SERVICE_UNIT}" "${SERVICE_EXEC_COMMAND}" "${SERVICE_EXEC_WORKDIR}" "${SERVICE_EXEC_ENV}"
 
   echo "Installing systemd service..."
-  ${SUDO}cp "${SERVICE_UNIT}" /etc/systemd/system/vm-mcp.service
+  ${SUDO}cp "${SERVICE_UNIT}" /etc/systemd/system/proxmcp.service
   ${SUDO}systemctl daemon-reload
-  ${SUDO}systemctl enable --now vm-mcp.service
-  ${SUDO}systemctl status vm-mcp.service --no-pager
+  ${SUDO}systemctl enable --now proxmcp.service
+  ${SUDO}systemctl status proxmcp.service --no-pager
   echo "Systemd service installed and started."
 fi
 
 cat <<EOF
-vm-mcp install complete.
+proxmcp install complete.
 Config directory: ${CONFIG_DIR}/mcp
 Native Codex settings: ${CONFIG_DIR}/settings.json
-Executable: vm-mcp-server
+Executable: proxmcp-server
 EOF

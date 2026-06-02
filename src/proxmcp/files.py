@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 
-def vm_file_put(local_path: str, remote_staging_dir: str = "/tmp/vm-mcp") -> str:
+def vm_file_put(local_path: str, remote_staging_dir: str = "/tmp/proxmcp") -> str:
     src = Path(local_path)
     if not src.exists():
         raise FileNotFoundError(local_path)
