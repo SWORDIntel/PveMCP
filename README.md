@@ -200,6 +200,7 @@ Add to your MCP client config (e.g. `~/.config/claude/claude_desktop_config.json
 
 | Tool | Description |
 |---|---|
+| `vm_network_audit` | End-to-end network path audit (Host bridge/firewall + Guest rules/routes) |
 | `vm_curl` | HTTP request from inside the guest — returns status code + body |
 | `vm_traceroute` | Trace network path (falls back to `tracepath`) |
 | `vm_dns_check` | DNS resolution from inside the guest (falls back to `nslookup`) |
@@ -244,6 +245,8 @@ Add to your MCP client config (e.g. `~/.config/claude/claude_desktop_config.json
 |---|---|
 | `vm_list` | List all VMs with status, cross-referenced against the memory store |
 | `vm_agent_probe` | Ping the guest agent before guest-exec to diagnose connectivity |
+| `vm_console_read` | Read the VM's serial console socket (diagnose boot failures) |
+| `vm_bootstrap` | Cloud-init factory: stage `user-data` snippet via FTP and boot |
 
 ---
 

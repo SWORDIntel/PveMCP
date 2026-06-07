@@ -194,6 +194,67 @@ class ProxmoxSnapshot:
 
 
 @dataclass(slots=True)
+class ProxmoxHostOps:
+    runner: CommandRunner
+
+    async def write_snippet(self, filename: str, content: str) -> CommandResult:
+        """Write a cloud-init snippet to the host's default snippet directory."""
+        if not filename.endswith((".yaml", ".yml")):
+            filename += ".yaml"
+        if _ensure_safe_token(filename, "filename", _NODE_RE) and not filename.replace("-", "").replace(".", "").isalnum():
+             return _invalid("0", "write_snippet", "filename has invalid characters")
+
+        snippet_dir = "/var/lib/vz/snippets"
+        filepath = f"{snippet_dir}/{filename}"
+        
+        import base64
+        encoded = base64.b64encode(content.encode("utf-8")).decode("ascii")
+        
+        # We use runner.run to ensure it respects the sudo wrapper if enabled
+        cmd = f"bash -c \"mkdir -p {snippet_dir} && echo '{encoded}' | base64 -d > {filepath}\""
+        return await self.runner.run(vmid="0", cmd=cmd)
+
+    async def read_serial_console(self, vmid: str, timeout: float = 2.0) -> CommandResult:
+        """Read the recent output from the VM's serial console socket."""
+        error = _ensure_vmid(vmid)
+        if error:
+            return _invalid(vmid, "read_serial", error)
+
+        # Python script to run on the host (with sudo) to read the Unix socket
+        script = f"""
+import socket
+import sys
+import time
+
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+try:
+    s.connect('/var/run/qemu-server/{vmid}.serial0')
+    s.settimeout(0.5)
+    s.sendall(b'\\r\\n')
+    data = b""
+    start = time.time()
+    while time.time() - start < {timeout}:
+        try:
+            chunk = s.recv(4096)
+            if not chunk: break
+            data += chunk
+        except socket.timeout:
+            break
+    s.close()
+    # Write only printable ascii and basic control chars
+    safe_data = bytes([b for b in data if b >= 32 or b in (9, 10, 13)])
+    sys.stdout.buffer.write(safe_data)
+except FileNotFoundError:
+    print("Serial socket not found. Ensure 'serial0: socket' is configured.")
+    sys.exit(1)
+except Exception as e:
+    print(str(e))
+    sys.exit(1)
+"""
+        cmd = f"python3 -c {shlex.quote(script)}"
+        return await self.runner.run(vmid=vmid, cmd=cmd)
+
+@dataclass(slots=True)
 class ProxmoxFileOps:
     runner: CommandRunner
 

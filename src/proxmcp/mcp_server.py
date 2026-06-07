@@ -15,6 +15,7 @@ from .proxmox import (
     ProxmoxBackup,
     ProxmoxConfig,
     ProxmoxFileOps,
+    ProxmoxHostOps,
     ProxmoxGuestExec,
     ProxmoxLifecycle,
     ProxmoxSnapshot,
@@ -43,6 +44,7 @@ service = VMService.build(
 proxmox = ProxmoxLifecycle(runner=service.runner)
 snapshot = ProxmoxSnapshot(runner=service.runner)
 file_ops = ProxmoxFileOps(runner=service.runner)
+host_ops = ProxmoxHostOps(runner=service.runner)
 proxmox_config = ProxmoxConfig(runner=service.runner)
 artifact_idx = ArtifactIndex()
 proxmox_backup = ProxmoxBackup(runner=service.runner)
@@ -1350,6 +1352,148 @@ async def vm_env(
     fmt["var_count"] = len(env_vars)
     return fmt
 
+
+@mcp.tool()
+async def vm_bootstrap(
+    vmid: str,
+    user_data_yaml: str,
+    filename: str | None = None,
+    auto_start: bool = True,
+    actor: str = "mcp-agent",
+    danger_mode: bool | Literal["safe", "maintenance", "break_glass"] = False,
+    audit_tag: str | None = None,
+) -> dict[str, Any]:
+    """Bootstrap a VM using a custom cloud-init user-data snippet.
+    
+    This acts as a 'Cloud-init Factory'. It securely stages the YAML on the host, 
+    attaches it to the VM via cicustom, and optionally boots the VM.
+    
+    Use this to dynamically provision packages, users, and services on first boot.
+    """
+    if not filename:
+        filename = f"mcp-bootstrap-{vmid}.yaml"
+        
+    # 1. Write the snippet to the host
+    write_cmd = _q_cmd("host", "write_snippet", filename)
+    write_res = await _run_with_policy(
+        vmid="0", actor=actor, action="host_write_snippet", command=write_cmd,
+        execute=lambda: host_ops.write_snippet(filename, user_data_yaml),
+        danger_mode=danger_mode, audit_tag=audit_tag, command_context="host"
+    )
+    if not write_res.get("ok"):
+        return _fmt(write_res, label="bootstrap:stage")
+
+    # 2. Attach it to the VM
+    attach_cmd = _q_cmd("qm", "set", vmid, "--cicustom", f"user=local:snippets/{filename}")
+    attach_res = await _run_with_policy(
+        vmid=vmid, actor=actor, action="vm_config_set", command=attach_cmd,
+        execute=lambda: proxmox_config.set(vmid, {"cicustom": f"user=local:snippets/{filename}"}),
+        danger_mode=danger_mode, audit_tag=audit_tag, command_context="host"
+    )
+    if not attach_res.get("ok"):
+         return _fmt(attach_res, label="bootstrap:attach")
+
+    # 3. Start the VM if requested
+    if auto_start:
+        start_cmd = _q_cmd("qm", "start", vmid)
+        start_res = await _run_with_policy(
+            vmid=vmid, actor=actor, action="vm_start", command=start_cmd,
+            execute=lambda: proxmox.start(vmid),
+            danger_mode=danger_mode, audit_tag=audit_tag, command_context="host"
+        )
+        return _fmt(start_res, label="bootstrap:complete")
+        
+    return _fmt(attach_res, label="bootstrap:staged")
+
+
+@mcp.tool()
+async def vm_console_read(
+    vmid: str,
+    timeout: float = 2.0,
+    actor: str = "mcp-agent",
+    danger_mode: bool | Literal["safe", "maintenance", "break_glass"] = False,
+    audit_tag: str | None = None,
+) -> dict[str, Any]:
+    """Read the recent output from the VM's serial console socket.
+    
+    This is extremely useful for diagnosing 'black box' failures (e.g., stuck at GRUB, 
+    kernel panic, or network dead) where SSH or QEMU Guest Agent are unreachable.
+    Requires 'serial0: socket' to be configured on the VM.
+    """
+    command = _q_cmd("qm", "terminal", vmid, "--dump") # Symbolic command for audit log
+    result = await _run_with_policy(
+        vmid=vmid,
+        actor=actor,
+        action="vm_console_read",
+        command=command,
+        execute=lambda: host_ops.read_serial_console(vmid=vmid, timeout=timeout),
+        danger_mode=danger_mode,
+        audit_tag=audit_tag,
+        command_context="host",
+    )
+    return _fmt(result, label="console")
+
+@mcp.tool()
+async def vm_network_audit(
+    vmid: str,
+    actor: str = "mcp-agent",
+    danger_mode: bool | Literal["safe", "maintenance", "break_glass"] = False,
+    audit_tag: str | None = None,
+) -> dict[str, Any]:
+    """Perform an end-to-end network path audit for a VM.
+    
+    This tool cross-references host-side bridge and firewall configurations with 
+    guest-side network state to diagnose 'black box' connectivity failures.
+    
+    Returns a combined report of:
+    1. Host: PVE Firewall rules for the VM
+    2. Host: Bridge forwarding database (FDB) entries
+    3. Guest: Internal firewall (nftables/iptables) and routing state
+    """
+    import asyncio
+    
+    async def _host_exec(cmd_name: str, args: list[str]) -> str:
+        cmd_str = _q_cmd(*args)
+        res = await _run_with_policy(
+            vmid=vmid, actor=actor, action=f"audit_host_{cmd_name}", command=cmd_str,
+            execute=lambda c=cmd_str: service.runner.run(vmid="0", cmd=c),
+            danger_mode=danger_mode, audit_tag=audit_tag, command_context="host"
+        )
+        return str(res.get("stdout") or res.get("stderr") or "").strip()
+
+    async def _guest_exec(cmd: str) -> str:
+        cmd_str = _guest_exec_command(vmid=vmid, cmd=cmd)
+        res = await _run_with_policy(
+            vmid=vmid, actor=actor, action="audit_guest_net", command=cmd_str,
+            execute=lambda c=cmd_str: gexec.exec(vmid=vmid, cmd=c),
+            danger_mode=danger_mode, audit_tag=audit_tag, command_context="guest"
+        )
+        return _guest_stdout(str(res.get("stdout") or res.get("stderr") or "")).strip()
+
+    # Gather data in parallel where possible
+    # We use 'cat /etc/pve/firewall/{vmid}.fw' as reading the file is safer than raw iptables dumps
+    host_fw, host_fdb, guest_fw, guest_routes = await asyncio.gather(
+        _host_exec("cat", ["cat", f"/etc/pve/firewall/{vmid}.fw"]),
+        _host_exec("bridge", ["bridge", "fdb", "show"]),
+        _guest_exec("nft list ruleset 2>/dev/null || iptables-save 2>/dev/null"),
+        _guest_exec("ip route"),
+        return_exceptions=True
+    )
+    
+    def _clean(val: Any) -> str:
+        if isinstance(val, Exception):
+            return f"Error: {val}"
+        return val if val else "(empty/none)"
+
+    return {
+        "ok": True,
+        "vmid": vmid,
+        "host_pve_firewall": _clean(host_fw),
+        "host_bridge_fdb": _clean(host_fdb),
+        "guest_firewall": _clean(guest_fw),
+        "guest_routes": _clean(guest_routes),
+        "summary": "Network audit completed. Review fields for discrepancies."
+    }
 
 @mcp.tool()
 async def vm_list(
