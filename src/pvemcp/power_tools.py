@@ -1,4 +1,5 @@
 from __future__ import annotations
+from .vm_memory import load_vm_memory, save_vm_memory, annotate_vm, get_vm_secret, annotate_vm_secret
 
 from typing import Any, Literal
 from .mcp_server import (
@@ -175,3 +176,62 @@ async def remote_file_get(
     res = await runner.run(f"cat {shlex.quote(remote_path)}")
     return _fmt(res, label=f"remote_file_get:{host}")
 
+
+@mcp.tool()
+async def vm_ssh_config_set(
+    vmid: str,
+    key_path: str | None = None,
+    key_content: str | None = None,
+    user: str | None = "root",
+) -> dict[str, Any]:
+    """Save SSH configuration for a VM. If key_content is provided, it is stored encrypted with AES-256."""
+    updates = {}
+    if user:
+        annotate_vm(vmid, env={"ssh_user": user})
+    if key_path:
+        annotate_vm(vmid, env={"ssh_key_path": key_path})
+    if key_content:
+        annotate_vm_secret(vmid, "ssh_key_content", key_content)
+        
+    return {"ok": True, "summary": f"SSH configuration saved for VM {vmid}"}
+
+@mcp.tool()
+async def vm_remote_tail(
+    vmid: str,
+    path: str,
+    lines: int = 50,
+    identity_file: str | None = None,
+) -> dict[str, Any]:
+    """Tail a log on a VM using its saved SSH configuration."""
+    import shlex
+    import tempfile
+    from .remote import SSHRunner
+    
+    mem = load_vm_memory(vmid)
+    user = mem.get("env", {}).get("ssh_user", "root")
+    key_path = identity_file or mem.get("env", {}).get("ssh_key_path", "~/.ssh/id_ed25519")
+    key_content = get_vm_secret(vmid, "ssh_key_content")
+    
+    # Resolve host IP from VM status or environment
+    host = mem.get("env", {}).get("hostname")
+    if not host:
+        # Fallback to checking qm status/config logic if needed, 
+        # but for now we expect the AI to have autodiscovered it.
+        return {"ok": False, "summary": "Host IP/Hostname not found in VM memory. Run vm_autodiscover first."}
+
+    tmp_key = None
+    if key_content:
+        # Write encrypted content to a temporary file for the SSH command
+        fd, tmp_key = tempfile.mkstemp()
+        os.write(fd, key_content.encode())
+        os.close(fd)
+        os.chmod(tmp_key, 0o600)
+        key_path = tmp_key
+
+    try:
+        runner = SSHRunner(host=host, user=user, identity_file=key_path)
+        res = await runner.run(f"tail -n {lines} {shlex.quote(path)}")
+        return _fmt(res, label=f"vm_remote_tail:{vmid}")
+    finally:
+        if tmp_key and os.path.exists(tmp_key):
+            os.remove(tmp_key)

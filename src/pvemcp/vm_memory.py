@@ -20,6 +20,7 @@ compact structured context block without re-discovery every session.
 from __future__ import annotations
 
 import json
+from .crypto import encrypt, decrypt
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -74,6 +75,7 @@ def _empty_record(vmid: str) -> dict[str, Any]:
         "containers": [],
         "env": {},
         "tags": [],
+        "secrets": {},
         "history": [],
         "created_at": _now(),
         "updated_at": _now(),
@@ -168,6 +170,23 @@ def annotate_vm(
     save_vm_memory(rec)
     return rec
 
+
+
+def annotate_vm_secret(vmid: str, key: str, value: str) -> None:
+    """Store an encrypted secret in VM memory."""
+    rec = load_vm_memory(vmid)
+    if "secrets" not in rec:
+        rec["secrets"] = {}
+    rec["secrets"][key] = encrypt(value)
+    save_vm_memory(rec)
+
+def get_vm_secret(vmid: str, key: str) -> str | None:
+    """Retrieve and decrypt a secret from VM memory."""
+    rec = load_vm_memory(vmid)
+    token = rec.get("secrets", {}).get(key)
+    if token:
+        return decrypt(token)
+    return None
 
 def list_all_vm_memories() -> list[dict[str, Any]]:
     """Return a summary listing of all stored VM memory records."""
