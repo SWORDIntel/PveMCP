@@ -11,7 +11,7 @@
 
 **A production-grade Proxmox orchestrator that gives your AI agent "God-mode" over your cluster and remote SSH hosts.**
 
-[Tool Reference](docs/tools.md) • [Installation](INSTALL.md) • [Security](docs/tools.md#security)
+[Tool Reference](docs/tools.md) • [Workflow Framework](docs/workflows.md) • [Installation](INSTALL.md) • [Security](docs/tools.md#security)
 
 </div>
 
