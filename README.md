@@ -31,7 +31,7 @@ PveMCP empowers your AI assistant (Claude, Cursor, Gemini) to handle complex inf
 
 ## 🛠️ Tooling Overview
 
-PveMCP's **63 tools** are organized into functional categories to empower autonomous operation:
+PveMCP's **67 tools** are organized into functional categories to empower autonomous operation:
 
 *   **⚡ VM Lifecycle**: Power states, cloning, migration, vzdump backups, and hardware configuration.
 *   **🔍 Guest Inspection**: Real-time process monitoring, CPU/RAM telemetry, and disk health analysis.
@@ -82,6 +82,7 @@ PveMCP is built for secure, single-operator environments:
 - **Redaction**: Secrets and keys are stripped from outputs before the AI sees them.
 - **Audit**: Every action is logged to an append-only JSON file for full accountability.
 - **Encryption**: Sensitive memory fields are AES-256 encrypted using a machine-local secret.
+- **Notifications**: Pushbullet integration for pipeline stages and AI alerts (`PUSHBULLET_API_KEY`).
 
 ---
 
@@ -95,3 +96,4 @@ This project is licensed under the **GNU Affero General Public License v3.0 (AGP
 > - **Commercial / Enterprise Use**: If the AGPL-3.0 is too harsh for your environment, please **email me** to discuss a commercial license.
 
 See the [LICENSE](LICENSE) file for full details.
+ full details.

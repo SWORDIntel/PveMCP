@@ -1,6 +1,6 @@
 # PveMCP Tool Reference
 
-This document provides a detailed technical reference for all **67 tools** available in PveMCP.
+This document provides a detailed technical reference for all **68 tools** available in PveMCP.
 
 ---
 
@@ -209,3 +209,4 @@ Specialized tools for malware analysis, reverse engineering, and incident respon
 | `vm_ram_dump` | `vmid`, `output_file` | Dump the live RAM of a VM to the host disk via QEMU monitor (Agentless forensics). |
 | `vm_network_quarantine` | `vmid`, `enable` | Dynamically manipulate PVE firewall to airgap the VM while keeping the guest agent alive. |
 | `vm_etc_diff` | `vmid` | Run configuration bisection (`dpkg -V` or `rpm -Va`) to find modified system files. |
+| `admin_notify` | `message`, `title` | Send a direct Pushbullet notification to the administrator via `PUSHBULLET_API_KEY`. |

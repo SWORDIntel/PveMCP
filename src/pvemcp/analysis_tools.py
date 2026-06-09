@@ -117,6 +117,27 @@ async def vm_etc_diff(
 
 
 # ---------------------------------------------------------------------------
+
+async def send_pushbullet(title: str, body: str) -> bool:
+    import os, json, shlex, asyncio
+    api_key = os.getenv("PUSHBULLET_API_KEY")
+    if not api_key:
+        return False
+    payload = json.dumps({"type": "note", "title": title, "body": body})
+    cmd = f"curl -s --header 'Access-Token: {api_key}' --header 'Content-Type: application/json' --data-binary {shlex.quote(payload)} --request POST https://api.pushbullet.com/v2/pushes"
+    proc = await asyncio.create_subprocess_shell(cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    await proc.communicate()
+    return proc.returncode == 0
+
+@mcp.tool()
+async def admin_notify(message: str, title: str = "PveMCP AI Alert") -> dict[str, Any]:
+    """Send a Pushbullet notification directly to the human admin."""
+    import os
+    if not os.getenv("PUSHBULLET_API_KEY"):
+        return {"ok": False, "summary": "PUSHBULLET_API_KEY is not set."}
+    success = await send_pushbullet(title, message)
+    return {"ok": success, "summary": "Notification sent." if success else "Failed to send notification."}
+
 # WATCHDOG HTTP LISTENER
 # ---------------------------------------------------------------------------
 # A lightweight asyncio HTTP server to receive triggers from pipelines.
@@ -147,6 +168,7 @@ async def handle_watchdog_request(reader: asyncio.StreamReader, writer: asyncio.
         # FastMCP uses `mcp.server.notification_manager`. For now, we log it, and the client
         # can poll `pvemcp://metrics` or we can just print it to stderr.
         logging.warning(f"[WATCHDOG TRIGGER] Pipeline event received: {body}")
+        asyncio.create_task(send_pushbullet("PveMCP Pipeline Alert", body))
         
         # Respond OK
         response = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK"
