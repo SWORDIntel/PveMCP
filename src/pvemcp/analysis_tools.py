@@ -158,7 +158,10 @@ async def handle_watchdog_request(reader: asyncio.StreamReader, writer: asyncio.
     await writer.drain()
     writer.close()
 
-async def start_watchdog_server(port: int = 8000):
+async def start_watchdog_server(port: int | None = None):
+    import os
+    if port is None:
+        port = int(os.getenv("PVEMCP_WATCHDOG_PORT", "41892"))
     server = await asyncio.start_server(handle_watchdog_request, '0.0.0.0', port)
     logging.info(f"Watchdog trigger listening on 0.0.0.0:{port} (POST /trigger)")
     async with server:
