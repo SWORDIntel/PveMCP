@@ -1,6 +1,7 @@
 # pvemcp
 
-`Python 3.11+` · `MCP` · `Proxmox` · `Production-Ready` · `57 Tools` · `License: MIT`
+`Python 3.11+` · `MCP` · `Proxmox` · `Production-Ready` · `63 Tools` · `License: MIT`
+
 
 A production-grade **Proxmox VM control plane** with a native [Model Context Protocol](https://modelcontextprotocol.io/) server and a first-class CLI (`vmctl`). Runs directly on the Proxmox host, driving VMs through `qm`/`pct` commands and the QEMU guest agent.
 
@@ -32,8 +33,9 @@ pvemcp exposes every Proxmox VM operation — lifecycle, execution, file I/O, lo
 
 | Binary | Purpose |
 |---|---|
-| `pvemcp-server` | MCP server (stdio transport, 57 tools) |
+| `pvemcp-server` | MCP server (stdio transport, 63 tools) |
 | `vmctl` | Human/script-facing CLI |
+
 
 ---
 
@@ -128,7 +130,7 @@ Add to your MCP client config:
 
 ### Tool Reference
 
-**60 tools** across 15 categories.
+**63 tools** across 16 categories.
 
 ---
 
@@ -137,6 +139,9 @@ Add to your MCP client config:
 | Tool | Description |
 |---|---|
 | `vm_remote_exec` | Execute commands on any remote host via SSH (Gateway) |
+| `remote_tail` | Fetch the last N lines of a remote file via SSH |
+| `remote_log_capture` | Watch a live remote log (tail -f) for a specific duration via SSH |
+| `remote_file_get` | Read a file from a remote host via SSH (e.g. for extracting certs) |
 
 #### Cloud-Init Factory (New)
 
