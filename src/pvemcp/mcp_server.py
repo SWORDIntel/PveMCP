@@ -2710,6 +2710,7 @@ def troubleshoot_prompt(vmid: str) -> str:
 
 
 import pvemcp.power_tools  # Register power-user tools
+import pvemcp.analysis_tools  # Register analysis & forensic tools
 
 def main():
     mcp.run()

@@ -1,6 +1,6 @@
 # PveMCP Tool Reference
 
-This document provides a detailed technical reference for all **63 tools** available in PveMCP.
+This document provides a detailed technical reference for all **67 tools** available in PveMCP.
 
 ---
 
@@ -196,3 +196,16 @@ Host-level operations.
 | `host_iso_download` | `storage`, `url`, `filename` | Download an ISO directly to Proxmox storage. |
 | `vm_console_read` | `vmid`, `timeout` | Emergency access: read the serial console socket. |
 | `vm_bootstrap` | `vmid`, `user_data_yaml` | One-shot cloud-init provisioning and boot. |
+
+---
+
+## Analysis & Forensics
+
+Specialized tools for malware analysis, reverse engineering, and incident response.
+
+| Tool | Parameters | Description |
+|---|---|---|
+| `vm_fork_sandbox` | `vmid`, `new_vmid`, `name`, `isolated_bridge` | Instantly create a Linked Clone and place it on an isolated network bridge (Airgapped sandbox). |
+| `vm_ram_dump` | `vmid`, `output_file` | Dump the live RAM of a VM to the host disk via QEMU monitor (Agentless forensics). |
+| `vm_network_quarantine` | `vmid`, `enable` | Dynamically manipulate PVE firewall to airgap the VM while keeping the guest agent alive. |
+| `vm_etc_diff` | `vmid` | Run configuration bisection (`dpkg -V` or `rpm -Va`) to find modified system files. |
