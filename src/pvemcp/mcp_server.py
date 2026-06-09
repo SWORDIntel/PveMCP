@@ -2711,6 +2711,110 @@ def troubleshoot_prompt(vmid: str) -> str:
     5. Check active network connections with vm_network.
     """
 
+# ---------------------------------------------------------------------------
+# POWER-USER TOOLS
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def vm_transactional_exec(
+    vmid: str,
+    cmd: str,
+    validate_cmd: str,
+    actor: str = "mcp-agent",
+    danger_mode: bool | Literal["safe", "maintenance", "break_glass"] = False,
+    audit_tag: str | None = None,
+) -> dict[str, Any]:
+    """Execute a destructive command safely by taking a snapshot first, running the command, and validating. Rolls back if validation fails."""
+    import time
+    snap_name = f"tx_{int(time.time())}"
+    
+    # 1. Snapshot
+    snap_res = await _run_with_policy(vmid=vmid, actor=actor, action="tx:snapshot", command=f"qm snapshot {vmid} {snap_name}", execute=lambda: snapshot.create(vmid, snap_name), danger_mode=danger_mode, audit_tag=audit_tag, command_context="host")
+    if not snap_res.get("ok"): return {"ok": False, "summary": f"Failed to take snapshot {snap_name}", "error": snap_res}
+
+    # 2. Exec
+    exec_res = await _run_with_policy(vmid=vmid, actor=actor, action="tx:exec", command=_guest_exec_command(vmid, cmd), execute=lambda: gexec.exec(vmid=vmid, cmd=cmd), danger_mode=danger_mode, audit_tag=audit_tag, command_context="guest")
+    
+    # 3. Validate
+    val_res = await _run_with_policy(vmid=vmid, actor=actor, action="tx:validate", command=_guest_exec_command(vmid, validate_cmd), execute=lambda: gexec.exec(vmid=vmid, cmd=validate_cmd), danger_mode=danger_mode, audit_tag=audit_tag, command_context="guest")
+    
+    if val_res.get("ok"):
+        # Success, delete snapshot
+        del_res = await _run_with_policy(vmid=vmid, actor=actor, action="tx:delete_snap", command=f"qm delsnapshot {vmid} {snap_name}", execute=lambda: snapshot.delete(vmid, snap_name), danger_mode=danger_mode, audit_tag=audit_tag, command_context="host")
+        return {"ok": True, "summary": "Transaction committed successfully.", "exec": exec_res, "validate": val_res, "cleanup": del_res.get("ok")}
+    else:
+        # Failure, rollback
+        roll_res = await _run_with_policy(vmid=vmid, actor=actor, action="tx:rollback", command=f"qm rollback {vmid} {snap_name}", execute=lambda: snapshot.rollback(vmid, snap_name), danger_mode=danger_mode, audit_tag=audit_tag, command_context="host")
+        # And delete
+        await _run_with_policy(vmid=vmid, actor=actor, action="tx:delete_snap", command=f"qm delsnapshot {vmid} {snap_name}", execute=lambda: snapshot.delete(vmid, snap_name), danger_mode=danger_mode, audit_tag=audit_tag, command_context="host")
+        return {"ok": False, "summary": "Validation failed. Transaction rolled back.", "exec": exec_res, "validate": val_res, "rollback": roll_res.get("ok")}
+
+
+@mcp.tool()
+async def vm_expose_port(
+    vmid: str,
+    guest_port: int,
+    actor: str = "mcp-agent",
+    danger_mode: bool | Literal["safe", "maintenance", "break_glass"] = False,
+    audit_tag: str | None = None,
+) -> dict[str, Any]:
+    """Expose a port from the VM to the Proxmox host's LAN IP on a random high port using socat."""
+    import random
+    host_port = random.randint(45000, 65000)
+    
+    # 1. Get Guest IP
+    ip_cmd = "ip -4 -j addr show | grep -oP '(?<=\"local\": \")[^\"]*' | grep -v '^127' | head -1"
+    ip_res = await _run_with_policy(vmid=vmid, actor=actor, action="port_fwd:get_ip", command=_guest_exec_command(vmid, ip_cmd), execute=lambda: gexec.exec(vmid=vmid, cmd=ip_cmd), danger_mode=danger_mode, audit_tag=audit_tag, command_context="guest")
+    guest_ip = _guest_stdout(str(ip_res.get("stdout", ""))).strip()
+    if not guest_ip: return {"ok": False, "summary": "Could not determine guest IP."}
+
+    # 2. Get Host LAN IP
+    host_ip_cmd = r"ip route get 1.1.1.1 | grep -oP 'src \K\S+'"
+    host_ip_res = await _run_with_policy(vmid="0", actor=actor, action="port_fwd:get_host_ip", command=host_ip_cmd, execute=lambda: service.runner.run(vmid="0", cmd=host_ip_cmd), danger_mode=danger_mode, audit_tag=audit_tag, command_context="host")
+    host_ip = str(host_ip_res.get("stdout", "")).strip()
+    if not host_ip: return {"ok": False, "summary": "Could not determine host LAN IP."}
+
+    # 3. Setup socat forwarding in background on host
+    socat_cmd = f"socat TCP-LISTEN:{host_port},bind={host_ip},fork,reuseaddr TCP:{guest_ip}:{guest_port} >/dev/null 2>&1 &"
+    await _run_with_policy(vmid="0", actor=actor, action="port_fwd:socat", command=socat_cmd, execute=lambda: service.runner.run(vmid="0", cmd=socat_cmd), danger_mode=danger_mode, audit_tag=audit_tag, command_context="host")
+
+    return {"ok": True, "summary": f"Port forwarded successfully! Access via http://{host_ip}:{host_port}", "host_ip": host_ip, "host_port": host_port, "guest_ip": guest_ip, "guest_port": guest_port}
+
+
+@mcp.tool()
+async def host_storage_list(actor: str = "mcp-agent", danger_mode: bool | Literal["safe", "maintenance", "break_glass"] = False, audit_tag: str | None = None) -> dict[str, Any]:
+    """List Proxmox datastores and their current usage."""
+    cmd = "pvesm status"
+    res = await _run_with_policy(vmid="0", actor=actor, action="storage_list", command=cmd, execute=lambda: service.runner.run(vmid="0", cmd=cmd), danger_mode=danger_mode, audit_tag=audit_tag, command_context="host")
+    return _fmt(res, label="pvesm")
+
+@mcp.tool()
+async def host_iso_download(storage: str, url: str, filename: str, actor: str = "mcp-agent", danger_mode: bool | Literal["safe", "maintenance", "break_glass"] = False, audit_tag: str | None = None) -> dict[str, Any]:
+    """Download an ISO directly to a Proxmox storage pool."""
+    cmd = f"pveam download {storage} {url} --filename {filename}"
+    res = await _run_with_policy(vmid="0", actor=actor, action="iso_download", command=cmd, execute=lambda: service.runner.run(vmid="0", cmd=cmd, timeout_s=300), danger_mode=danger_mode, audit_tag=audit_tag, command_context="host")
+    return _fmt(res, label="pveam")
+
+@mcp.tool()
+async def vm_deploy_compose(vmid: str, project_name: str, compose_yaml: str, actor: str = "mcp-agent", danger_mode: bool | Literal["safe", "maintenance", "break_glass"] = False, audit_tag: str | None = None) -> dict[str, Any]:
+    """Deploy a complete docker-compose stack inside a VM in one shot."""
+    import base64
+    encoded = base64.b64encode(compose_yaml.encode("utf-8")).decode("ascii")
+    
+    script = f"mkdir -p /opt/{project_name} && echo '{encoded}' | base64 -d > /opt/{project_name}/docker-compose.yml && cd /opt/{project_name} && docker compose up -d"
+    res = await _run_with_policy(vmid=vmid, actor=actor, action="deploy_compose", command=_guest_exec_command(vmid, script), execute=lambda: gexec.exec(vmid=vmid, cmd=script, timeout=120), danger_mode=danger_mode, audit_tag=audit_tag, command_context="guest")
+    return _fmt(res, label=f"compose:{project_name}")
+
+@mcp.tool()
+async def vm_pcap_analyze(vmid: str, interface: str = "any", port: int | None = None, duration: int = 10, actor: str = "mcp-agent", danger_mode: bool | Literal["safe", "maintenance", "break_glass"] = False, audit_tag: str | None = None) -> dict[str, Any]:
+    """Run a 10-second packet capture inside the VM and analyze top talkers."""
+    port_filter = f"port {port}" if port else ""
+    script = f"timeout {duration} tcpdump -i {interface} -n -nn -q {port_filter} > /tmp/pcap.txt 2>/dev/null; awk '{{print $3\" -> \"$5}}' /tmp/pcap.txt | sort | uniq -c | sort -nr | head -n 10"
+    res = await _run_with_policy(vmid=vmid, actor=actor, action="pcap_analyze", command=_guest_exec_command(vmid, script), execute=lambda: gexec.exec(vmid=vmid, cmd=script, timeout=duration+5), danger_mode=danger_mode, audit_tag=audit_tag, command_context="guest")
+    
+    stdout = _guest_stdout(str(res.get("stdout", "")))
+    return {"ok": res.get("ok"), "summary": f"PCAP analysis for {duration}s", "top_talkers": stdout.splitlines()}
+
 def main():
     mcp.run()
 
