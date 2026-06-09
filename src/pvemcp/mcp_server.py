@@ -2610,6 +2610,38 @@ def vm_metrics() -> dict[str, Any]:
     """Get system performance metrics."""
     return service.metrics_snapshot()
 
+
+# ---------------------------------------------------------------------------
+# MCP RESOURCES
+# ---------------------------------------------------------------------------
+
+@mcp.resource("pvemcp://metrics")
+def get_metrics_resource() -> str:
+    """Get current system metrics as a resource."""
+    return json.dumps(service.metrics_snapshot(), indent=2)
+
+@mcp.resource("pvemcp://vms/{vmid}/memory")
+def get_vm_memory_resource(vmid: str) -> str:
+    """Get the persistent memory/context for a specific VM."""
+    return json.dumps(load_vm_memory(vmid), indent=2)
+
+
+# ---------------------------------------------------------------------------
+# MCP PROMPTS
+# ---------------------------------------------------------------------------
+
+@mcp.prompt("vm-troubleshoot")
+def troubleshoot_prompt(vmid: str) -> str:
+    """Generate a troubleshooting plan for a specific VM."""
+    return f"""
+    I need to troubleshoot VM {vmid}. Please follow these steps:
+    1. Check VM status using vm_state.
+    2. Check guest agent connectivity with vm_agent_probe.
+    3. If reachable, check system load and memory with vm_top.
+    4. Check for critical errors in the kernel log with vm_dmesg.
+    5. Check active network connections with vm_network.
+    """
+
 def main():
     mcp.run()
 
