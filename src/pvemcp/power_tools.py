@@ -235,3 +235,38 @@ async def vm_remote_tail(
     finally:
         if tmp_key and os.path.exists(tmp_key):
             os.remove(tmp_key)
+
+@mcp.tool()
+async def vm_disk_reclaim(
+    vmid: str,
+    actor: str = "mcp-agent",
+    danger_mode: bool | Literal["safe", "maintenance", "break_glass"] = False,
+    audit_tag: str | None = None,
+) -> dict[str, Any]:
+    """Run fstrim inside the VM to reclaim unused blocks on the host (requires discard=on in VM config)."""
+    cmd = "fstrim -a"
+    res = await _run_with_policy(
+        vmid=vmid, 
+        actor=actor, 
+        action="disk_reclaim", 
+        command=_guest_exec_command(vmid, cmd), 
+        execute=lambda: gexec.exec(vmid=vmid, cmd=cmd), 
+        danger_mode=danger_mode, 
+        audit_tag=audit_tag, 
+        command_context="guest"
+    )
+    return _fmt(res, label=f"fstrim:{vmid}")
+
+@mcp.tool()
+async def gitlab_cleanup(
+    actor: str = "mcp-agent",
+    danger_mode: bool | Literal["safe", "maintenance", "break_glass"] = False,
+    audit_tag: str | None = None,
+) -> dict[str, Any]:
+    """Weekly GitLab maintenance: reclaim host disk space for VM 9320."""
+    return await vm_disk_reclaim(
+        vmid="9320", 
+        actor=actor, 
+        danger_mode=danger_mode, 
+        audit_tag=audit_tag
+    )
