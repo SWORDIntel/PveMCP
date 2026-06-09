@@ -351,6 +351,9 @@ def main() -> int:
     mem_clear_parser = mem_sub.add_parser("clear")
     mem_clear_parser.add_argument("--vmid", required=True)
 
+    workflow_parser = sub.add_parser("workflow", help="Run a Lua workflow")
+    workflow_parser.add_argument("--script", required=True)
+
     args = parser.parse_args()
     danger_mode = "maintenance"
     global service
@@ -948,6 +951,20 @@ def main() -> int:
                 print(f"Memory cleared for VM {args.vmid}")
             else:
                 print(f"No memory found for VM {args.vmid}")
+        return 0
+
+    if args.command == "workflow":
+        from .workflows import LuaWorkflowEngine
+        from .mcp_server import vm_state, vm_guest_exec, vm_service_restart, vm_drift_check, vm_disk_reclaim, vm_remote_exec, admin_notify
+        engine = LuaWorkflowEngine()
+        engine.bind_tool("vm_state", vm_state)
+        engine.bind_tool("vm_guest_exec", vm_guest_exec)
+        engine.bind_tool("vm_service_restart", vm_service_restart)
+        engine.bind_tool("vm_drift_check", vm_drift_check)
+        engine.bind_tool("vm_disk_reclaim", vm_disk_reclaim)
+        engine.bind_tool("vm_remote_exec", vm_remote_exec)
+        engine.bind_tool("admin_notify", admin_notify)
+        print(engine.run_script(args.script))
         return 0
 
     return 1
