@@ -32,6 +32,9 @@ from .vm_memory import (
     memory_context_summary,
     record_history,
 )
+from .cloudinit import generate_user_data
+from .replay import get_vm_history
+from .federation import FederationManager
 
 # Initialize FastMCP
 mcp = FastMCP("PveMCP")
@@ -50,6 +53,7 @@ artifact_idx = ArtifactIndex()
 proxmox_backup = ProxmoxBackup(runner=service.runner)
 gexec = ProxmoxGuestExec(runner=service.runner)
 workflow_mgr = WorkflowManager(service=service, file_ops=file_ops, gexec=gexec, artifact_idx=artifact_idx)
+federation_mgr = FederationManager(service=service)
 
 
 def _guest_exec_command(vmid: str, cmd: str, cwd: str | None = None, env: dict[str, str] | None = None, timeout: int | None = None) -> str:
@@ -2612,7 +2616,60 @@ def vm_metrics() -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+@mcp.tool()
+async def vm_generate_cloudinit(
+    packages: list[str] | None = None,
+    users: list[dict] | None = None,
+    runcmd: list[str] | None = None,
+) -> str:
+    """Generate a cloud-init user-data YAML string."""
+    return generate_user_data(packages=packages, users=users, runcmd=runcmd)
+
+@mcp.tool()
+def vm_history_replay(vmid: str, limit: int = 20) -> list[dict[str, Any]]:
+    """Replay the last N audit events for a specific VM."""
+    path = os.getenv("PVEMCP_AUDIT_LOG", "logs/audit.log")
+    return get_vm_history(path, vmid, limit)
+
+@mcp.tool()
+async def vm_remote_exec(host: str, cmd: str, user: str | None = None) -> dict[str, Any]:
+    """Execute a command on a remote host via SSH (Federation Gateway)."""
+    from .remote import SSHRunner
+    runner = SSHRunner(host=host, user=user)
+    res = await runner.run(cmd)
+    return res.to_dict()
+
 # MCP RESOURCES
+@mcp.resource("pvemcp://dashboard")
+async def get_dashboard_resource() -> str:
+    """Get a live dashboard of all VMs and their status."""
+    cmd = "qm list"
+    res = await service.runner.run(vmid="0", cmd=cmd)
+    if not res.ok:
+        return f"Error fetching VM list: {res.stderr}"
+    
+    vms = []
+    lines = res.stdout.strip().splitlines()
+    header = lines[0].split()
+    for line in lines[1:]:
+        parts = line.split()
+        if len(parts) >= 3:
+            vms.append({"vmid": parts[0], "name": parts[1], "status": parts[2]})
+    
+    md = "# PveMCP Live Dashboard\n\n"
+    md += "| VMID | Name | Status | Health |\n"
+    md += "|---|---|---|---|\n"
+    for vm in vms:
+        health = "✓" if vm["status"] == "running" else "○"
+        md += f"| {vm['vmid']} | {vm['name']} | {vm['status']} | {health} |\n"
+    return md
+
+@mcp.resource("pvemcp://vms/{vmid}/console/stream")
+async def get_vm_console_stream(vmid: str) -> str:
+    """Get the recent console output for a VM."""
+    res = await host_ops.read_serial_console(vmid=vmid)
+    return res.stdout if res.ok else f"Error: {res.stderr}"
+
 # ---------------------------------------------------------------------------
 
 @mcp.resource("pvemcp://metrics")
@@ -2628,6 +2685,18 @@ def get_vm_memory_resource(vmid: str) -> str:
 
 # ---------------------------------------------------------------------------
 # MCP PROMPTS
+@mcp.prompt("vm-auto-heal")
+def auto_heal_prompt(vmid: str) -> str:
+    """Generate an auto-healing plan for a VM based on drift."""
+    return f"""
+    VM {vmid} has detected drift from its baseline.
+    Please:
+    1. Run vm_drift_check for {vmid}.
+    2. Identify missing services or containers.
+    3. Attempt to restart missing services using vm_service_restart.
+    4. Verify health with vm_slo_check.
+    """
+
 # ---------------------------------------------------------------------------
 
 @mcp.prompt("vm-troubleshoot")

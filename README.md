@@ -128,7 +128,27 @@ Add to your MCP client config:
 
 ### Tool Reference
 
-**57 tools** across 14 categories.
+**60 tools** across 15 categories.
+
+---
+
+#### Federation & Remote Control (New)
+
+| Tool | Description |
+|---|---|
+| `vm_remote_exec` | Execute commands on any remote host via SSH (Gateway) |
+
+#### Cloud-Init Factory (New)
+
+| Tool | Description |
+|---|---|
+| `vm_generate_cloudinit` | Dynamically generate valid user-data YAML configurations |
+
+#### Audit & History (New)
+
+| Tool | Description |
+|---|---|
+| `vm_history_replay` | Replay the audit timeline for a specific VM |
 
 ---
 
