@@ -233,3 +233,39 @@ async def vm_sandbox_sync(
                 os.remove(tmp_path)
                 
     return {"ok": True, "summary": f"Synced {len(synced_files)} files from {source_vmid} to {target_vmid}.", "synced": synced_files}
+
+@mcp.tool()
+async def host_zfs_status(
+    pool: str = "tank",
+    actor: str = "mcp-agent",
+    danger_mode: bool | Literal["safe", "maintenance", "break_glass"] = False,
+    audit_tag: str | None = None,
+) -> dict[str, Any]:
+    """Check ZFS pool health, usage, and wear."""
+    cmd = f"zpool list -p {pool} && zpool status {pool}"
+    res = await _run_with_policy(vmid="0", actor=actor, action="host:zfs_status", command=cmd, execute=lambda: service.runner.run(vmid="0", cmd=cmd), danger_mode=danger_mode, audit_tag=audit_tag, command_context="host")
+    return _fmt(res, label="zfs_status")
+
+@mcp.tool()
+async def host_io_metrics(
+    actor: str = "mcp-agent",
+    danger_mode: bool | Literal["safe", "maintenance", "break_glass"] = False,
+    audit_tag: str | None = None,
+) -> dict[str, Any]:
+    """Check host I/O wait times using iostat."""
+    cmd = "iostat -dx 1 2 | tail -n +3"
+    res = await _run_with_policy(vmid="0", actor=actor, action="host:io_metrics", command=cmd, execute=lambda: service.runner.run(vmid="0", cmd=cmd), danger_mode=danger_mode, audit_tag=audit_tag, command_context="host")
+    return _fmt(res, label="iostat")
+
+@mcp.tool()
+async def host_zfs_scrub_control(
+    pool: str = "tank",
+    action: Literal["pause", "resume"] = "pause",
+    actor: str = "mcp-agent",
+    danger_mode: bool | Literal["safe", "maintenance", "break_glass"] = "maintenance",
+    audit_tag: str | None = None,
+) -> dict[str, Any]:
+    """Pause or resume a ZFS scrub (use maintenance mode)."""
+    cmd = f"zpool scrub {pool} {action}"
+    res = await _run_with_policy(vmid="0", actor=actor, action=f"host:zfs_scrub:{action}", command=cmd, execute=lambda: service.runner.run(vmid="0", cmd=cmd), danger_mode=danger_mode, audit_tag=audit_tag, command_context="host")
+    return _fmt(res, label="zfs_scrub")
