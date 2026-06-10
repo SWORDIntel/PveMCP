@@ -5,6 +5,7 @@ requires-python = ">=3.10"
 description = "Proxmox-oriented MCP server and CLI for VM lifecycle, orchestration, and host/guest operations"
 dependencies = [
     "fastmcp",
+    "lupa>=2.8",
     "pyftpdlib>=2.2.0",
 ]
 readme = "README.md"

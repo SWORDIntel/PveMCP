@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import shlex
 from typing import Any, Literal
 
 from .mcp_server import (
@@ -123,21 +124,26 @@ async def send_pushbullet(title: str, body: str) -> bool:
     import os, json, shlex, asyncio
     api_key = os.getenv("PUSHBULLET_API_KEY")
     if not api_key:
+        logging.error("Pushbullet notification failed: PUSHBULLET_API_KEY is not set.")
         return False
     payload = json.dumps({"type": "note", "title": title, "body": body})
-    cmd = f"curl -s --header 'Access-Token: {api_key}' --header 'Content-Type: application/json' --data-binary {shlex.quote(payload)} --request POST https://api.pushbullet.com/v2/pushes"
+    cmd = f"curl -s --fail --header {shlex.quote(f'Access-Token: {api_key}')} --header 'Content-Type: application/json' --data-binary {shlex.quote(payload)} --request POST https://api.pushbullet.com/v2/pushes"
     proc = await asyncio.create_subprocess_shell(cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-    await proc.communicate()
-    return proc.returncode == 0
+    stdout, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        logging.error(f"Pushbullet notification failed (exit {proc.returncode}): {stderr.decode()}")
+        return False
+    return True
 
 @mcp.tool()
 async def admin_notify(message: str, title: str = "PveMCP AI Alert") -> dict[str, Any]:
     """Send a Pushbullet notification directly to the human admin."""
     import os
     if not os.getenv("PUSHBULLET_API_KEY"):
+        logging.error("admin_notify tool called but PUSHBULLET_API_KEY is not set.")
         return {"ok": False, "summary": "PUSHBULLET_API_KEY is not set."}
     success = await send_pushbullet(title, message)
-    return {"ok": success, "summary": "Notification sent." if success else "Failed to send notification."}
+    return {"ok": success, "summary": "Notification sent." if success else "Failed to send notification (check logs)."}
 
 # WATCHDOG HTTP LISTENER
 # ---------------------------------------------------------------------------
@@ -165,13 +171,10 @@ async def handle_watchdog_request(reader: asyncio.StreamReader, writer: asyncio.
         body = (await reader.readexactly(content_length)).decode()
 
     if path == '/trigger' and method == 'POST':
-        # Log it so MCP sees it, or we could emit a custom MCP notification if the FastMCP API allows.
-        # FastMCP uses `mcp.server.notification_manager`. For now, we log it, and the client
-        # can poll `pvemcp://metrics` or we can just print it to stderr.
+        # Log it so MCP sees it
         logging.warning(f"[WATCHDOG TRIGGER] Pipeline event received: {body}")
         # Push notification
-        await admin_notify(body, title='Watchdog Alert')
-        asyncio.create_task(send_pushbullet("PveMCP Pipeline Alert", body))
+        await admin_notify(body, title='PveMCP Pipeline Alert')
         
         # Respond OK
         response = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK"
@@ -192,12 +195,13 @@ async def start_watchdog_server(port: int | None = None):
     async with server:
         await server.serve_forever()
 
-# Start the watchdog task when this module is loaded (if running inside asyncio loop)
-try:
-    loop = asyncio.get_running_loop()
-    loop.create_task(start_watchdog_server())
-except RuntimeError:
-    pass # No running loop yet, that's fine.
+@mcp.tool()
+async def vm_watchdog_start(port: int | None = None) -> dict[str, Any]:
+    """Start the Watchdog HTTP listener (default port 41892) to receive external pipeline events (POST /trigger) and fire notifications."""
+    # We use create_task so it runs in the main MCP event loop without blocking this tool return
+    asyncio.create_task(start_watchdog_server(port))
+    return {"ok": True, "summary": f"Watchdog server starting on port {port or 41892}."}
+
 
 @mcp.tool()
 async def vm_sandbox_sync(
@@ -295,3 +299,8 @@ async def vm_run_kp14_pipeline(
     )
     
     return _fmt(res, label="kp14_pipeline")
+
+import asyncio
+
+def sync_vm_run_kp14_pipeline(*args, **kwargs):
+    return asyncio.run(vm_run_kp14_pipeline(*args, **kwargs))

@@ -956,7 +956,7 @@ def main() -> int:
     if args.command == "workflow":
         from .lua_engine import LuaWorkflowEngine
         from .mcp_server import vm_state, vm_guest_exec, vm_service_restart, vm_drift_check, vm_remote_exec, vm_metrics
-        from .analysis_tools import admin_notify, host_zfs_status, host_io_metrics, host_zfs_scrub_control, vm_run_kp14_pipeline
+        from .analysis_tools import admin_notify, host_zfs_status, host_io_metrics, host_zfs_scrub_control, sync_vm_run_kp14_pipeline
         from .power_tools import vm_disk_reclaim
         engine = LuaWorkflowEngine()
         engine.bind_tool("vm_state", vm_state)
@@ -970,7 +970,7 @@ def main() -> int:
         engine.bind_tool("host_zfs_status", host_zfs_status)
         engine.bind_tool("host_io_metrics", host_io_metrics)
         engine.bind_tool("host_zfs_scrub_control", host_zfs_scrub_control)
-        engine.bind_tool("vm_run_kp14_pipeline", vm_run_kp14_pipeline)
+        engine.bind_tool("vm_run_kp14_pipeline", sync_vm_run_kp14_pipeline)
         print(engine.run_script(args.script))
         return 0
 
